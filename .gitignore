@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment / secrets
+.env
+.env.*
+
+# Dataset (8+ GB of spectrograms and caches)
+data/
+
+# Training outputs (created by train.py)
+models/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/

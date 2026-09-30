@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Queen Bee Detector</title>
+<style>
+  :root {
+    --bg: #faf7f0; --card: #ffffff; --text: #1f1d1a; --muted: #6b665e; --border: #e6e0d4;
+    --accent: #e0a100; --on-accent: #1f1d1a;
+    --original: #2e7d32; --absent: #c62828; --rejected: #e65100; --accepted: #1565c0;
+    --yes-bg: #e8f5e9; --no-bg: #ffebee;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16140f; --card: #211e18; --text: #f2eee6; --muted: #a8a197; --border: #3a352c;
+      --accent: #f0b429;
+      --original: #66bb6a; --absent: #ef5350; --rejected: #ffa726; --accepted: #64b5f6;
+      --yes-bg: #1b3320; --no-bg: #3d1a1a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; line-height: 1.5; }
+  main { max-width: 760px; margin: 0 auto; padding: 32px 16px 48px; }
+  h1 { margin: 0; font-size: 1.8rem; }
+  h2 { margin: 0 0 12px; font-size: 1.05rem; }
+  .sub { margin: 4px 0 24px; color: var(--muted); }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+          padding: 20px; margin-bottom: 16px; }
+
+  #drop { border: 2px dashed var(--border); border-radius: 12px; padding: 28px 16px;
+          text-align: center; cursor: pointer; transition: border-color .15s; }
+  #drop:hover, #drop:focus-visible, #drop.over { border-color: var(--accent); outline: none; }
+  #drop strong { display: block; font-size: 1.05rem; }
+  #drop span { color: var(--muted); font-size: .9rem; overflow-wrap: anywhere; }
+  audio { width: 100%; margin-top: 14px; }
+  #go { width: 100%; margin-top: 14px; padding: 12px; border: 0; border-radius: 10px;
+        background: var(--accent); color: var(--on-accent); font-size: 1rem; font-weight: 600; cursor: pointer; }
+  #go:disabled { opacity: .5; cursor: default; }
+  #error { color: var(--absent); margin: 12px 0 0; }
+  #error:empty { display: none; }
+
+  .verdict { border-radius: 12px; padding: 16px; font-size: 1.4rem; font-weight: 700; }
+  .verdict.yes { background: var(--yes-bg); }
+  .verdict.no { background: var(--no-bg); }
+  .verdict small { display: block; margin-top: 4px; font-size: 1rem; font-weight: 500; color: var(--muted); }
+  .meta { margin: 10px 0 0; color: var(--muted); font-size: .9rem; overflow-wrap: anywhere; }
+
+  .bar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; margin-top: 12px; font-size: .95rem; }
+  .bar b { font-variant-numeric: tabular-nums; }
+  .track { grid-column: 1 / -1; height: 8px; border-radius: 4px; background: var(--border); overflow: hidden; }
+  .fill { height: 100%; border-radius: 4px; }
+
+  .strip { display: flex; height: 28px; border-radius: 6px; overflow: hidden; }
+  .strip div { flex: 1; min-width: 1px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 10px; font-size: .85rem; color: var(--muted); }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; }
+  .axis { display: flex; justify-content: space-between; margin-top: 4px; font-size: .8rem; color: var(--muted); }
+
+  .spec { overflow-x: auto; border-radius: 6px; }
+  .spec img { display: block; height: 128px; image-rendering: pixelated; }
+  details { margin-top: 12px; }
+  summary { cursor: pointer; color: var(--muted); }
+  table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: .9rem; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  td:last-child, th:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+  footer { color: var(--muted); font-size: .85rem; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Queen Bee Detector</h1>
+  <p class="sub">Upload a beehive recording to check whether the queen is present and what state the hive is in.</p>
+
+  <section class="card">
+    <div id="drop" role="button" tabindex="0" aria-label="Choose a recording">
+      <strong>Drop a WAV file here or click to choose</strong>
+      <span id="fname">At least 5 seconds. The first 10 minutes are analysed.</span>
+    </div>
+    <input id="input" type="file" accept=".wav,.flac,.ogg,.mp3,audio/*" hidden>
+    <audio id="player" controls hidden></audio>
+    <button id="go" disabled>Predict</button>
+    <p id="error" role="alert"></p>
+  </section>
+
+  <div id="results" hidden>
+    <section class="card">
+      <div id="verdict" class="verdict"></div>
+      <p id="meta" class="meta"></p>
+    </section>
+
+    <section class="card">
+      <h2>Hive state probabilities</h2>
+      <div id="bars"></div>
+    </section>
+
+    <section class="card">
+      <h2>Every 5 seconds</h2>
+      <div id="strip" class="strip"></div>
+      <div class="axis"><span>0:00</span><span id="axis-end"></span></div>
+      <div id="legend" class="legend"></div>
+      <details>
+        <summary>Show table</summary>
+        <table>
+          <thead><tr><th>Time</th><th>Hive state</th><th>Confidence</th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </details>
+    </section>
+
+    <section class="card">
+      <h2>What the model sees (first minute)</h2>
+      <div class="spec"><img id="spec" alt="Mel spectrogram of the first minute"></div>
+      <p class="meta">Mel spectrogram: time left to right, low frequencies at the bottom, bright = loud.</p>
+    </section>
+  </div>
+
+  <footer>
+    The model was trained on 4 hives from the Smart Bee Colony Monitor dataset (test accuracy 0.93 on 1-minute clips).
+    Recordings from other hives or microphones may give unreliable results.
+  </footer>
+</main>
+
+<script>
+const COLORS = {
+  "Queen present (original queen)": "var(--original)",
+  "Queen not present": "var(--absent)",
+  "Queen present and rejected": "var(--rejected)",
+  "Queen present and newly accepted": "var(--accepted)",
+};
+const $ = (id) => document.getElementById(id);
+const pct = (p) => (p * 100).toFixed(1) + "%";
+const clock = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+const el = (tag, props = {}, ...children) => {
+  const e = Object.assign(document.createElement(tag), props);
+  e.append(...children);
+  return e;
+};
+let file = null;
+
+function choose(f) {
+  file = f;
+  $("fname").textContent = f.name;
+  $("player").src = URL.createObjectURL(f);
+  $("player").hidden = false;
+  $("go").disabled = false;
+  $("error").textContent = "";
+}
+
+$("drop").addEventListener("click", () => $("input").click());
+$("drop").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" || e.key === " ") { e.preventDefault(); $("input").click(); }
+});
+$("input").addEventListener("change", (e) => e.target.files[0] && choose(e.target.files[0]));
+for (const ev of ["dragenter", "dragover"]) {
+  $("drop").addEventListener(ev, (e) => { e.preventDefault(); $("drop").classList.add("over"); });
+}
+for (const ev of ["dragleave", "drop"]) {
+  $("drop").addEventListener(ev, (e) => { e.preventDefault(); $("drop").classList.remove("over"); });
+}
+$("drop").addEventListener("drop", (e) => e.dataTransfer.files[0] && choose(e.dataTransfer.files[0]));
+
+$("go").addEventListener("click", async () => {
+  $("go").disabled = true;
+  $("go").textContent = "Analysing…";
+  $("error").textContent = "";
+  const form = new FormData();
+  form.append("file", file);
+  try {
+    const res = await fetch("/predict", { method: "POST", body: form });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || `Prediction failed (HTTP ${res.status}).`);
+    show(data);
+  } catch (err) {
+    $("error").textContent = err.message;
+  } finally {
+    $("go").disabled = false;
+    $("go").textContent = "Predict";
+  }
+});
+
+function show(d) {
+  const v = $("verdict");
+  v.className = "verdict " + (d.queen_present ? "yes" : "no");
+  v.replaceChildren(
+    d.queen_present ? "✓ Queen present" : "✗ Queen not present",
+    el("small", { textContent: `Hive state: ${d.hive_state} (${pct(d.confidence)})` }),
+  );
+  $("meta").textContent = `${d.filename} · ${clock(d.seconds_analysed)} analysed in ` +
+    `${d.chunks.length} chunks of 5 s · model ${d.model}`;
+
+  $("bars").replaceChildren(...Object.entries(d.probabilities).map(([name, p]) => {
+    const fill = el("div", { className: "fill" });
+    fill.style.width = pct(p);
+    fill.style.background = COLORS[name];
+    return el("div", { className: "bar" },
+      el("span", { textContent: name }), el("b", { textContent: pct(p) }),
+      el("div", { className: "track" }, fill));
+  }));
+
+  $("strip").replaceChildren(...d.chunks.map((c) => {
+    const cell = el("div", { title: `${clock(c.start)}–${clock(c.start + 5)} · ${c.hive_state} (${pct(c.confidence)})` });
+    cell.style.background = COLORS[c.hive_state];
+    return cell;
+  }));
+  $("axis-end").textContent = clock(d.seconds_analysed);
+  $("legend").replaceChildren(...Object.entries(COLORS).map(([name, color]) => {
+    const dot = el("i");
+    dot.style.background = color;
+    return el("span", {}, dot, name);
+  }));
+  $("rows").replaceChildren(...d.chunks.map((c) => el("tr", {},
+    el("td", { textContent: `${clock(c.start)}–${clock(c.start + 5)}` }),
+    el("td", { textContent: c.hive_state }),
+    el("td", { textContent: pct(c.confidence) }))));
+
+  $("spec").src = d.spectrogram;
+  $("results").hidden = false;
+  $("results").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+</script>
+</body>
+</html>
